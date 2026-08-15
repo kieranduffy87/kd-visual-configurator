@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KD Visual Configurator</title>
+<meta name="description" content="Generate on-brand 3D key visuals — landscape, colourway, camera, light and type — and export them in every format.">
+<link rel="icon" href="assets/kd-mark.svg">
+<link rel="stylesheet" href="fonts/instrument-sans.css">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/kd.css">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body class="kd-root kd-scope">
+
+<a class="kd-skip-link" href="#frame">Skip to the canvas</a>
+
+<header class="bar">
+  <div class="bar__brand">
+    <img src="assets/kd-icon-light.svg" alt="" id="bar-mark" class="bar__mark" width="26" height="17">
+    <div>
+      <h1 class="bar__title">Visual Configurator</h1>
+      <p class="bar__sub">3D key visuals, on brand, without a 3D artist</p>
+    </div>
+  </div>
+
+  <div class="bar__recipes">
+    <span class="kd-label bar__reclabel">Start from</span>
+    <div class="chiprow" id="recipes"></div>
+  </div>
+
+  <div class="bar__actions">
+    <button type="button" class="ghostbtn" id="btn-shuffle" title="Shuffle within the guardrails (R)">Shuffle</button>
+    <button type="button" class="ghostbtn" id="btn-reset" title="Back to defaults">Reset</button>
+    <button type="button" class="kd-theme-toggle" id="btn-theme" aria-label="Switch interface theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main class="workspace">
+  <aside class="rail" id="rail-left" aria-label="Scene controls"></aside>
+
+  <section class="stage">
+    <div class="stage__top">
+      <div id="format-row" class="inlinegrp"></div>
+      <p class="stage__note" id="cam-note"></p>
+    </div>
+
+    <div class="stage__canvas">
+      <div class="frame" id="frame">
+        <canvas id="gl"></canvas>
+        <canvas id="overlay" class="overlay"></canvas>
+        <i class="refinebar" id="refine-bar" aria-hidden="true"></i>
+        <div class="renderhud" id="render-hud" role="status" hidden>
+          <span class="renderhud__label">Rendering</span>
+          <span class="renderhud__pct" id="render-hud-pct">0%</span>
+          <span class="renderhud__track"><i id="render-hud-bar"></i></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage__bottom">
+      <p class="stage__summary" id="summary"></p>
+      <div class="stage__out">
+        <div id="size-row" class="inlinegrp"></div>
+        <div id="quality-row" class="inlinegrp"></div>
+        <button type="button" class="ghostbtn" id="btn-guides" aria-pressed="false" title="Safe area and thirds (G)">Guides</button>
+        <button type="button" class="ghostbtn" id="btn-copy-link">Copy link</button>
+        <button type="button" class="ghostbtn" id="btn-copy-image">Copy image</button>
+        <button type="button" class="kd-btn kd-btn--nav" id="btn-export">Export PNG</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="rail" id="rail-right" aria-label="Look and type controls"></aside>
+</main>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
