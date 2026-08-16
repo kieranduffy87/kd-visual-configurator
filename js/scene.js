@@ -5,7 +5,7 @@
    ============================================================ */
 
 import * as THREE from 'three';
-import { FIELDS, shoreFalloff, FLAT_SHADED } from './noise.js';
+import { FIELDS, shoreFalloff, FLAT_SHADED, loopNoise, fbm3 } from './noise.js';
 import { byId, COLOURWAYS, MOODS, CAMERAS, LIGHT_COLOURS, WORLDS } from './brand.js';
 
 const PLANE = 96;          // world size of the terrain field
@@ -131,6 +131,18 @@ export class Stage {
           col += uFillColor * pow(pd, 2.2) * uPanel * 0.55;
           col += uSunColor * smoothstep(0.25, 1.0, h) * uPanel * 0.42;   // overhead wash
           col += uHorizon * smoothstep(0.15, -0.5, h) * uPanel * 0.12;   // floor lift
+
+          // Strip lights. Structure is the point: a smooth environment gives
+          // chrome nothing to streak and glass nothing to refract, so the
+          // material studies hang their whole look on these bands.
+          float strips = sin(h * 13.0 + 1.2);
+          col += uSunColor * smoothstep(0.55, 0.98, strips) * uPanel * 0.62 * uFillVis;
+
+          // and a few vertical louvres so it isn't rotationally symmetric
+          float az = atan(dir.z, dir.x);
+          float louvre = sin(az * 3.0 + 0.7);
+          col += uFillColor * smoothstep(0.72, 1.0, louvre)
+                 * smoothstep(-0.15, 0.55, h) * uPanel * 0.55 * uFillVis;
         }
 
         // bounce off the ground back into the lower sky
@@ -383,12 +395,14 @@ export class Stage {
      ============================================================ */
 
   _disposeWorld() {
-    for (const key of ['cyc', 'floor', 'water']) {
+    for (const key of ['cyc', 'floor', 'water', 'abstract']) {
       const obj = this[key];
       if (!obj) continue;
       this.scene.remove(obj);
-      obj.geometry.dispose();
-      obj.material.dispose();
+      obj.traverse((n) => {
+        if (n.geometry) n.geometry.dispose();
+        if (n.material) n.material.dispose();
+      });
       this[key] = null;
     }
   }
@@ -479,6 +493,143 @@ export class Stage {
     this.scene.add(this.water);
   }
 
+  /* ============================================================
+     Abstract worlds
+
+     No ground, no horizon — the frame is filled by one material
+     study. These lean entirely on the environment probe, so they
+     run with the studio panels turned up.
+     ============================================================ */
+
+  /* Metal tints derived from the colourway, so a stack still reads as KD. */
+  _metalPalette(cw) {
+    return [
+      { color: '#e8ebf2', rough: 0.09, metal: 1.0 },
+      { color: cw.accent, rough: 0.16, metal: 1.0 },
+      { color: cw.slope || cw.high, rough: 0.28, metal: 0.9 },
+      { color: cw.low, rough: 0.12, metal: 1.0 },
+      { color: cw.high, rough: 0.22, metal: 1.0 },
+    ];
+  }
+
+  /* Stacked, extruded plates — multi-layered metal. Each plate is a closed
+     loop of noise sampled around a circle, so the outlines are organic and
+     no two layers repeat. */
+  _buildStrata(state) {
+    const cw = byId(COLOURWAYS, state.colourway);
+    const palette = this._metalPalette(cw);
+    const layers = Math.round(18 + state.detail * 34);
+    const lift = 0.075 + state.amplitude * 0.115;
+    const group = new THREE.Group();
+
+    for (let i = 0; i < layers; i++) {
+      const t = i / Math.max(1, layers - 1);
+
+      /* Radius wanders instead of tapering — a monotonic taper reads as a
+         cake, this reads as a milled block that's been eroded. */
+      const wander = loopNoise(t * 5.4 + 0.3, 1.9, state.seed + 401);
+      const radius = 4.1 * (0.55 + wander * 0.75) * (1 - t * 0.16);
+
+      const pts = [];
+      const N = 148;
+      for (let k = 0; k < N; k++) {
+        const a = (k / N) * Math.PI * 2;
+        const wob = loopNoise(a, 2.2 + t * 2.6, state.seed + i * 37);
+        const r = radius * (0.8 + wob * 0.4);
+        pts.push(new THREE.Vector2(Math.cos(a) * r, Math.sin(a) * r));
+      }
+      const geo = new THREE.ExtrudeGeometry(new THREE.Shape(pts), {
+        depth: lift * 0.78, bevelEnabled: true,
+        bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 1, curveSegments: 1,
+      });
+      geo.rotateX(-Math.PI / 2);
+
+      /* Mostly neutral steel, with the brand metal used as an occasional
+         seam rather than every other plate. */
+      const spec = (i % 7 === 3) ? palette[1] : palette[i % 2 === 0 ? 0 : 2];
+      const mesh = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({
+        color: spec.color, metalness: spec.metal, roughness: spec.rough,
+        envMapIntensity: 1.9, clearcoat: 0.3, clearcoatRoughness: 0.15,
+      }));
+      mesh.position.y = i * lift;
+      mesh.position.x = (loopNoise(t * 4.3, 1.5, state.seed + 11) - 0.5) * 3.4;
+      mesh.position.z = (loopNoise(t * 4.3, 1.5, state.seed + 91) - 0.5) * 3.4;
+      mesh.rotation.y = t * Math.PI * 1.4;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+
+    group.position.y = -layers * lift * 0.5;
+    this.abstract = group;
+    this.scene.add(group);
+  }
+
+  /* Liquid chrome — a sphere pushed around by 3D noise. Displaced on the
+     CPU so the normals can be recomputed properly; a vertex-shader version
+     would need analytic derivatives to avoid faceting. */
+  _buildFlux(state) {
+    const cw = byId(COLOURWAYS, state.colourway);
+    const geo = new THREE.IcosahedronGeometry(2.6, Math.round(28 + state.detail * 36));
+    const pos = geo.attributes.position;
+    const amp = 0.14 + state.amplitude * 0.5;
+    const freq = 0.28 + state.detail * 0.34;
+    const v = new THREE.Vector3();
+
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      /* Two octaves only: a mirror amplifies every wrinkle, so the fine
+         octaves that read as detail on a matte surface read as crushed foil
+         on chrome. */
+      const n = fbm3(v.x * freq, v.y * freq, v.z * freq, state.seed, 2);
+      const push = 1 + (n - 0.5) * amp;
+      pos.setXYZ(i, v.x * push, v.y * push, v.z * push);
+    }
+    geo.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({
+      color: '#f2f4f8', metalness: 1, roughness: 0.16,
+      envMapIntensity: 1.9,
+      iridescence: 0.55, iridescenceIOR: 1.9, iridescenceThicknessRange: [120, 520],
+    }));
+    mesh.castShadow = true;
+    this.abstract = mesh;
+    this.scene.add(mesh);
+  }
+
+  /* Flowing refracted glass — one continuous tube following a closed noise
+     curve, in dispersive glass. A single form on purpose: three's
+     transmission samples the opaque buffer, so glass never refracts glass
+     and a cluster would read flat where the pieces overlap. */
+  _buildPrism(state) {
+    const cw = byId(COLOURWAYS, state.colourway);
+    const points = [];
+    const N = 14;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const r = 2.9 * (0.72 + loopNoise(a, 2.0, state.seed) * 0.5);
+      points.push(new THREE.Vector3(
+        Math.cos(a) * r,
+        (loopNoise(a, 1.6, state.seed + 55) - 0.5) * (1.2 + state.amplitude * 4.0),
+        Math.sin(a) * r,
+      ));
+    }
+    const curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.6);
+    const geo = new THREE.TubeGeometry(curve, Math.round(200 + state.detail * 420), 0.55 + state.amplitude * 0.5, 36, true);
+
+    const mesh = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({
+      color: '#ffffff',
+      transmission: 1, thickness: 2.2, ior: 1.55,
+      roughness: 0.04, metalness: 0,
+      dispersion: 3.4,
+      clearcoat: 1, clearcoatRoughness: 0.04,
+      attenuationColor: new THREE.Color(cw.accent), attenuationDistance: 6,
+      envMapIntensity: 1.8,
+    }));
+    this.abstract = mesh;
+    this.scene.add(mesh);
+  }
+
   _buildWorld(state) {
     const world = byId(WORLDS, state.world);
     this._disposeWorld();
@@ -487,9 +638,14 @@ export class Stage {
     if (world.id === 'studio') this._buildStudio(state);
     else if (world.id === 'void') this._buildVoidFloor(state);
     else if (world.id === 'sea') this._buildWater(state);
+    else if (world.id === 'strata') this._buildStrata(state);
+    else if (world.id === 'flux') this._buildFlux(state);
+    else if (world.id === 'prism') this._buildPrism(state);
 
     /* Empty worlds want the subject on the deck, not floating in mid air. */
-    this.subjectY = world.terrain ? 2.9 : (world.id === 'studio' ? 1.9 : 1.2);
+    this.subjectY = world.terrain ? 2.9
+      : world.id === 'studio' ? 1.9
+      : world.form ? 0 : 1.2;
     if (this.subject) this.subject.position.y = this.subjectY;
   }
 
@@ -755,6 +911,9 @@ export class Stage {
     this.camera.lookAt(0, ty, 0);
 
     if (this.water) this.water.material.userData.u.uTime.value = this.elapsed;
+    if (this.abstract && this.state && this.state.motion) {
+      this.abstract.rotation.y = this.elapsed * 0.08;
+    }
 
     if (this.subject) {
       const t = this.elapsed;

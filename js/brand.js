@@ -115,6 +115,11 @@ export const WORLDS = [
   { id: 'sea', name: 'Sea', terrain: true, camScale: 1, envIntensity: 1.15, skyBoost: 1.0, note: 'The same land, half drowned' },
   { id: 'studio', name: 'Studio', terrain: false, camScale: 0.62, envIntensity: 1.35, skyBoost: 1.7, note: 'Seamless cyclorama, product-shot lighting' },
   { id: 'void', name: 'Void', terrain: false, camScale: 0.66, envIntensity: 1.9, skyBoost: 2.4, note: 'Floating on a polished floor' },
+
+  /* Material studies — no ground, no horizon, the form fills the frame. */
+  { id: 'strata', name: 'Strata', terrain: false, form: true, camScale: 0.86, envIntensity: 2.0, skyBoost: 2.6, note: 'Stacked metal plates, milled and offset' },
+  { id: 'flux', name: 'Flux', terrain: false, form: true, camScale: 0.62, envIntensity: 2.1, skyBoost: 2.3, note: 'Liquid chrome, caught mid-swell' },
+  { id: 'prism', name: 'Prism', terrain: false, form: true, camScale: 0.62, envIntensity: 2.0, skyBoost: 2.6, note: 'A ribbon of refracting glass' },
 ];
 
 export const SCENES = [
@@ -364,6 +369,42 @@ export const RECIPES = [
     },
   },
   {
+    id: 'milled',
+    name: 'Milled',
+    state: {
+      world: 'strata',
+      scene: 'dunes', surface: 'solid', object: 'none', material: 'metal',
+      colourway: 'mono', mood: 'studio', camera: 'hero', format: '4:5',
+      layout: 'corner', amplitude: 0.55, detail: 0.62, seed: 3312,
+      lightAz: 1.2, lightEl: 0.55, lightPower: 0.8, scrim: false,
+      keyColour: 'neutral', rimColour: 'electric', focus: 0.32,
+    },
+  },
+  {
+    id: 'molten',
+    name: 'Molten',
+    state: {
+      world: 'flux',
+      scene: 'dunes', surface: 'solid', object: 'none', material: 'metal',
+      colourway: 'nocturne', mood: 'contrast', camera: 'detail', format: '1:1',
+      layout: 'centre', amplitude: 0.62, detail: 0.7, seed: 7781,
+      lightAz: -1.4, lightEl: 0.42, lightPower: 0.9, scrim: false,
+      keyColour: 'ice', rimColour: 'electric', focus: 0.24,
+    },
+  },
+  {
+    id: 'refract',
+    name: 'Refraction',
+    state: {
+      world: 'prism',
+      scene: 'dunes', surface: 'solid', object: 'none', material: 'glass',
+      colourway: 'signal', mood: 'studio', camera: 'hero', format: '16:9',
+      layout: 'stack', amplitude: 0.45, detail: 0.6, seed: 5120,
+      lightAz: 2.1, lightEl: 0.5, lightPower: 0.85, scrim: true,
+      keyColour: 'neutral', rimColour: 'auto', focus: 0.3,
+    },
+  },
+  {
     id: 'facet',
     name: 'Crystal field',
     state: {
@@ -412,7 +453,10 @@ export function shuffle(state) {
     ...state,
     world,
     /* the empty worlds need something in them */
-    object: world === 'field' || world === 'sea' ? object : pick(OBJECTS.filter((o) => o.id !== 'none')),
+    /* Empty worlds need a subject; the material studies already are one. */
+    object: byId(WORLDS, world).form ? 'none'
+      : world === 'field' || world === 'sea' ? object
+      : pick(OBJECTS.filter((o) => o.id !== 'none')),
     scene: pick(SCENES),
     surface: pick(SURFACES),
     material: pick(MATERIALS),

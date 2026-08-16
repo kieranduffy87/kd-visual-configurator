@@ -29,7 +29,7 @@ on port 8552.
 
 | Group | Options |
 | --- | --- |
-| World | Field · Sea · Studio · Void |
+| World | Field · Sea · Studio · Void · Strata · Flux · Prism |
 | Landscape | Dunes · Ridges · Canyons · Mesa · Terraces · Archipelago · Drift · Swell · Crystal, plus relief, detail and a seed |
 | Surface | Solid · Contour · Grid · Points |
 | Subject | KD mark · Sphere · Torus · Monolith · none, in glass, brand, matte or metal |
@@ -45,8 +45,9 @@ object, Crystal field) set a whole look in one click. **Shuffle** randomises ins
 
 ## Worlds
 
-The landscape is one world of four, and the Landscape and Surface panels only
-appear for the two that have terrain.
+The landscape is one world of seven. Panels follow the world: Landscape and
+Surface only appear for the two with terrain, Form only for the material
+studies.
 
 - **Field** — open landscape running to the horizon.
 - **Sea** — the same land, half drowned. The terrain keeps its raw heights here
@@ -58,6 +59,29 @@ appear for the two that have terrain.
   camera angle.
 - **Void** — a polished floor and nothing else, where the environment does all
   the work.
+
+Three of them are material studies rather than places — no ground, no horizon,
+the form fills the frame:
+
+- **Strata** — stacked, extruded metal plates. Each outline is a closed loop of
+  noise sampled around a circle. The radius wanders rather than tapering,
+  because a monotonic taper reads as a wedding cake; wandering reads as a
+  milled block that's been eroded.
+- **Flux** — liquid chrome: a sphere displaced by 3D noise on the CPU so the
+  normals can be recomputed properly. Only two octaves, deliberately — a mirror
+  amplifies every wrinkle, and the fine octaves that read as detail on a matte
+  surface read as crushed foil on chrome.
+- **Prism** — a single continuous tube following a closed noise curve in
+  dispersive glass. One form on purpose: three's transmission samples the
+  opaque buffer, so glass never refracts glass and a cluster would go flat
+  wherever the pieces overlap.
+
+The material studies live or die on the environment. They switch on **strip
+lights** — bands of brightness across elevation, plus a few vertical louvres.
+A smooth environment gives chrome nothing to streak and glass nothing to
+refract; the bands are what make metal read as metal. They're scaled by the
+same visibility scalar as the softbox, so they stay a reflection feature
+rather than painting a white arc across the sky.
 
 Worlds carry their own camera scale, because the presets are framed for a
 96-unit landscape and a studio subject is a couple of units tall. They also

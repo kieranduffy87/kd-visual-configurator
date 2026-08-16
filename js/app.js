@@ -43,6 +43,7 @@ const pct = (v) => Math.round(v * 100) + '%';
 const deg = (v) => Math.round((v * 180) / Math.PI) + '°';
 
 const hasTerrain = (s) => byId(WORLDS, s.world).terrain;
+const isForm = (s) => !!byId(WORLDS, s.world).form;
 
 const leftGroups = [
   {
@@ -58,6 +59,16 @@ const leftGroups = [
       { type: 'chips', key: 'scene', options: SCENES },
       { type: 'range', key: 'amplitude', label: 'Relief', min: 0, max: 1, step: 0.01, format: pct },
       { type: 'range', key: 'detail', label: 'Detail', min: 0, max: 1, step: 0.01, format: pct },
+      { type: 'seed' },
+    ],
+  },
+  {
+    title: 'Form',
+    visibleWhen: isForm,
+    hint: 'The material study fills the frame. Seed reshapes it.',
+    controls: [
+      { type: 'range', key: 'amplitude', label: 'Amount', min: 0, max: 1, step: 0.01, format: pct },
+      { type: 'range', key: 'detail', label: 'Density', min: 0, max: 1, step: 0.01, format: pct },
       { type: 'seed' },
     ],
   },

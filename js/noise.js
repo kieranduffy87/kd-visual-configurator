@@ -191,3 +191,51 @@ export function shoreFalloff(x, y, half) {
 
 /* Scenes that want faceted, un-smoothed normals. */
 export const FLAT_SHADED = new Set(['crystal']);
+
+/* ============================================================
+   Noise for the abstract worlds
+   ============================================================ */
+
+/* Smooth closed loop — 2D noise sampled around a circle, so the first
+   and last sample are the same point and the outline never seams. */
+export function loopNoise(theta, freq, seed) {
+  const x = Math.cos(theta) * freq;
+  const y = Math.sin(theta) * freq;
+  return fbm(x, y, seed, 4, 0) ;
+}
+
+/* Hashes all three axes independently. Folding y and z into one integer
+   (as a 2D hash forces you to) makes neighbouring cells correlate and the
+   surface picks up axis-aligned blocky banding. */
+function hash3(ix, iy, iz, seed) {
+  let h = Math.imul(ix | 0, 374761393)
+        ^ Math.imul(iy | 0, 668265263)
+        ^ Math.imul(iz | 0, 1442695041)
+        ^ Math.imul(seed | 0, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+/* Value-noise fbm in three dimensions, for displacing closed forms. */
+function noise3(x, y, z, seed) {
+  const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+  const fx = x - ix, fy = y - iy, fz = z - iz;
+  const u = quintic(fx), v = quintic(fy), w = quintic(fz);
+  const c = (dx, dy, dz) => hash3(ix + dx, iy + dy, iz + dz, seed);
+  const x00 = c(0, 0, 0) + (c(1, 0, 0) - c(0, 0, 0)) * u;
+  const x10 = c(0, 1, 0) + (c(1, 1, 0) - c(0, 1, 0)) * u;
+  const x01 = c(0, 0, 1) + (c(1, 0, 1) - c(0, 0, 1)) * u;
+  const x11 = c(0, 1, 1) + (c(1, 1, 1) - c(0, 1, 1)) * u;
+  return (x00 + (x10 - x00) * v) + ((x01 + (x11 - x01) * v) - (x00 + (x10 - x00) * v)) * w;
+}
+
+export function fbm3(x, y, z, seed, octaves = 4) {
+  let sum = 0, amp = 1, norm = 0, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    sum += noise3(x * freq, y * freq, z * freq, seed + i * 977) * amp;
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2.03;
+  }
+  return sum / norm;
+}
