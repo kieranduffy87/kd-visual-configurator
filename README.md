@@ -29,6 +29,7 @@ on port 8552.
 
 | Group | Options |
 | --- | --- |
+| World | Field · Sea · Studio · Void |
 | Landscape | Dunes · Ridges · Canyons · Mesa · Terraces · Archipelago · Drift · Swell · Crystal, plus relief, detail and a seed |
 | Surface | Solid · Contour · Grid · Points |
 | Subject | KD mark · Sphere · Torus · Monolith · none, in glass, brand, matte or metal |
@@ -38,9 +39,31 @@ on port 8552.
 | Format | 16:9 · 3:2 · 1:1 · 4:5 · 9:16 |
 | Type layer | Stack · Centre · Cover · Split · Corner · Clean, with eyebrow, headline, subhead, mark and scrim |
 
-Nine **recipes** in the top bar (Brand hero, Report cover, Social square, Story,
-Deck divider, Pattern plate, Canyon hero, Archipelago, Crystal field) set a
-whole look in one click. **Shuffle** randomises inside the guardrails.
+Eleven **recipes** in the top bar (Brand hero, Report cover, Social square, Story,
+Deck divider, Pattern plate, Canyon hero, Archipelago, Studio still, Void
+object, Crystal field) set a whole look in one click. **Shuffle** randomises inside the guardrails.
+
+## Worlds
+
+The landscape is one world of four, and the Landscape and Surface panels only
+appear for the two that have terrain.
+
+- **Field** — open landscape running to the horizon.
+- **Sea** — the same land, half drowned. The terrain keeps its raw heights here
+  instead of being levelled, so `y = 0` is a real waterline; the water plane
+  sits just above the lowest ground with ripples in the vertex shader.
+- **Studio** — a seamless cyclorama. It's the heightfield trick again, but the
+  profile is a radial cove rather than noise: flat underfoot, then a wide
+  radius sweeping up in every direction, so there's no visible seam from any
+  camera angle.
+- **Void** — a polished floor and nothing else, where the environment does all
+  the work.
+
+Worlds carry their own camera scale, because the presets are framed for a
+96-unit landscape and a studio subject is a couple of units tall. They also
+carry their own environment strength: the empty worlds switch on broad studio
+panels in the sky, since a tight softbox reads as a hot dot in a mirror rather
+than an area light.
 
 ## Rendering
 
@@ -80,7 +103,7 @@ css/kd.css          KD component classes
 css/app.css         tool chrome only
 js/brand.js         every selectable option, the recipes, share-link codec
 js/noise.js         deterministic value-noise fbm — a seed always rebuilds the same terrain
-js/scene.js         three.js stage: terrain, subject, lights, procedural environment
+js/scene.js         three.js stage: worlds, terrain, subject, lights, sky and environment
 js/overlay.js       the type layer, drawn in canvas 2D
 js/ui.js            data-driven control builder
 js/app.js           state, render loop, export
@@ -112,6 +135,12 @@ Details worth knowing:
   every export and leaves type on black.
 - Accumulation buffers hold linear light; the final blit does the sRGB encode.
   Don't let three encode as well or everything comes out washed out.
+- One GLSL function (`Stage.SKY_GLSL`) describes the sky, and both the visible
+  backdrop and the reflection probe evaluate it, so what you see is what glass
+  and metal reflect. The probe renders to a half-float target rather than a
+  canvas specifically so the sun can carry values far above 1 — that headroom
+  is what gives specular highlights their punch, and an 8-bit canvas can't
+  hold it.
 
 ## Local development
 

@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { FIELDS, shoreFalloff, FLAT_SHADED } from './noise.js';
-import { byId, COLOURWAYS, MOODS, CAMERAS, LIGHT_COLOURS } from './brand.js';
+import { byId, COLOURWAYS, MOODS, CAMERAS, LIGHT_COLOURS, WORLDS } from './brand.js';
 
 const PLANE = 96;          // world size of the terrain field
 const HALF = PLANE / 2;
@@ -65,66 +65,143 @@ export class Stage {
     this._bindPointer();
   }
 
-  /* ---------- backdrop ---------- */
+  /* ============================================================
+     Sky and environment
 
-  _buildBackdrop() {
-    this.bgUniforms = {
+     One GLSL function describes the world: gradient, horizon glow, a
+     sun disc, two softboxes and a ground bounce. The visible backdrop
+     and the reflection probe both evaluate it, so what you see in the
+     sky is what glass and metal reflect. The probe is rendered to a
+     half-float target rather than a canvas, which lets the sun carry
+     values far above 1 — that headroom is what gives specular
+     highlights their punch.
+     ============================================================ */
+
+  _skyUniforms() {
+    if (this.sky) return this.sky;
+    this.sky = {
       uTop: { value: new THREE.Color('#020e3e') },
       uBottom: { value: new THREE.Color('#06070c') },
+      uHorizon: { value: new THREE.Color('#050a24') },
+      uGround: { value: new THREE.Color('#04050a') },
+      uSunDir: { value: new THREE.Vector3(0, 0.4, 1).normalize() },
+      uSunColor: { value: new THREE.Color('#ffffff') },
+      uSunPower: { value: 24 },
+      uFillDir: { value: new THREE.Vector3(0, 0.3, -1).normalize() },
+      uFillColor: { value: new THREE.Color('#3f6bff') },
+      uFillPower: { value: 3 },
+      uGlow: { value: 1 },
+      uPanel: { value: 0 },
     };
+    return this.sky;
+  }
+
+  static get SKY_GLSL() {
+    return /* glsl */`
+      uniform vec3 uTop; uniform vec3 uBottom; uniform vec3 uHorizon; uniform vec3 uGround;
+      uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uSunPower;
+      uniform vec3 uFillDir; uniform vec3 uFillColor; uniform float uFillPower;
+      uniform float uGlow; uniform float uFillVis; uniform float uPanel;
+
+      vec3 kdSky(vec3 dir) {
+        float h = dir.y;
+
+        // sky body, then the ground half folded under it
+        vec3 col = mix(uHorizon, uTop, smoothstep(0.0, 0.72, h));
+        col = mix(col, uBottom, smoothstep(0.0, -0.35, h));
+        col = mix(col, uGround, smoothstep(-0.12, -0.6, h) * 0.85);
+
+        // horizon band — the thing that reads as atmosphere
+        col += uHorizon * exp(-abs(h) * 9.0) * 0.55 * uGlow;
+
+        // key. the tight core is the visible disc, the wide lobe is its glow
+        float sd = max(dot(dir, uSunDir), 0.0);
+        col += uSunColor * pow(sd, 2200.0) * uSunPower * 14.0;
+        col += uSunColor * pow(sd, 26.0) * uSunPower * 0.16 * uGlow;
+
+        // Fill softbox. Wanted at full strength in reflections, but only
+        // hinted at in the visible sky or it reads as a blotch.
+        float fd = max(dot(dir, uFillDir), 0.0);
+        col += uFillColor * pow(fd, 11.0) * uFillPower * 0.26 * uFillVis;
+
+        // Broad studio panels. A tight softbox reads as a hot dot in a mirror;
+        // an area light needs a wide lobe. Only the empty worlds switch these on.
+        if (uPanel > 0.0) {
+          float pd = max(dot(dir, uFillDir), 0.0);
+          col += uFillColor * pow(pd, 2.2) * uPanel * 0.55;
+          col += uSunColor * smoothstep(0.25, 1.0, h) * uPanel * 0.42;   // overhead wash
+          col += uHorizon * smoothstep(0.15, -0.5, h) * uPanel * 0.12;   // floor lift
+        }
+
+        // bounce off the ground back into the lower sky
+        col += uGround * max(0.0, -h) * 0.25;
+
+        return max(col, vec3(0.0));
+      }`;
+  }
+
+  _buildBackdrop() {
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: this.bgUniforms,
+      uniforms: { ...this._skyUniforms(), uFillVis: { value: 0.25 } },
       vertexShader: /* glsl */`
         varying vec3 vDir;
         void main(){
-          vDir = normalize(position);
+          vDir = position;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: /* glsl */`
-        uniform vec3 uTop; uniform vec3 uBottom;
         varying vec3 vDir;
         #include <common>
+        ${Stage.SKY_GLSL}
         void main(){
-          float t = smoothstep(-0.45, 0.75, vDir.y);
-          vec3 col = mix(uBottom, uTop, t);
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = vec4(kdSky(normalize(vDir)), 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,
     });
-    this.backdrop = new THREE.Mesh(new THREE.SphereGeometry(300, 40, 28), mat);
+    this.backdrop = new THREE.Mesh(new THREE.SphereGeometry(300, 64, 40), mat);
     this.backdrop.frustumCulled = false;
     this.scene.add(this.backdrop);
   }
 
-  /* Procedural studio environment: a soft sky plus one bright softbox. */
-  _buildEnvironment(cw) {
-    const c = document.createElement('canvas');
-    c.width = 512; c.height = 256;
-    const g = c.getContext('2d');
-    const grad = g.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, cw.bgTop);
-    grad.addColorStop(0.55, cw.fog);
-    grad.addColorStop(1, cw.bgBottom);
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 512, 256);
-    const box = g.createRadialGradient(150, 62, 4, 150, 62, 120);
-    box.addColorStop(0, 'rgba(255,255,255,0.95)');
-    box.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = box;
-    g.fillRect(0, 0, 512, 256);
-    const fill = g.createRadialGradient(390, 110, 4, 390, 110, 150);
-    fill.addColorStop(0, cw.rim + 'cc');
-    fill.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = fill;
-    g.fillRect(0, 0, 512, 256);
+  /* Renders the sky into an equirect target and prefilters it for IBL. */
+  _updateEnvironment() {
+    if (!this.envRT) {
+      this.envRT = new THREE.WebGLRenderTarget(1024, 512, {
+        type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false,
+      });
+      this.envRT.texture.mapping = THREE.EquirectangularReflectionMapping;
+    }
+    this._ensureQuad();
+    if (!this.envMat) {
+      this.envMat = new THREE.ShaderMaterial({
+        uniforms: { ...this._skyUniforms(), uFillVis: { value: 1.0 } },
+        depthTest: false, depthWrite: false,
+        vertexShader: /* glsl */`
+          varying vec2 vUv;
+          void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+        fragmentShader: /* glsl */`
+          varying vec2 vUv;
+          #include <common>
+          ${Stage.SKY_GLSL}
+          void main(){
+            // three's equirect convention, inverted
+            float phi = (vUv.x - 0.5) * 2.0 * PI;
+            float theta = (vUv.y - 0.5) * PI;
+            vec3 dir = vec3(cos(theta) * cos(phi), sin(theta), cos(theta) * sin(phi));
+            gl_FragColor = vec4(kdSky(dir), 1.0);
+          }`,
+      });
+    }
 
-    const tex = new THREE.CanvasTexture(c);
-    tex.mapping = THREE.EquirectangularReflectionMapping;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const env = this.pmrem.fromEquirectangular(tex).texture;
-    tex.dispose();
+    const prevTarget = this.renderer.getRenderTarget();
+    this.quadMesh.material = this.envMat;
+    this.renderer.setRenderTarget(this.envRT);
+    this.renderer.render(this.quadScene, this.quadCamera);
+    this.renderer.setRenderTarget(prevTarget);
+
+    const env = this.pmrem.fromEquirectangular(this.envRT.texture).texture;
     if (this.scene.environment) this.scene.environment.dispose();
     this.scene.environment = env;
   }
@@ -233,7 +310,11 @@ export class Stage {
       if (h < trough) trough = h;
     }
     const span = Math.max(0.001, peak - trough);
-    const centre = field(0, 0, state.seed) * shoreFalloff(0, 0, HALF) * amp;
+    /* Levelling keeps framing stable across seeds, but the sea needs a fixed
+       waterline, so there the raw heights are kept. */
+    const centre = state.world === 'sea'
+      ? 0
+      : field(0, 0, state.seed) * shoreFalloff(0, 0, HALF) * amp;
     for (let i = 0; i < pos.count; i++) {
       pos.setY(i, heights[i] * amp - centre);
     }
@@ -289,6 +370,127 @@ export class Stage {
       this.scene.add(this.terrain);
     }
     this.peakHeight = peak * amp - centre;
+    this.waterLevel = trough * amp - centre + span * amp * 0.12;
+  }
+
+  /* ============================================================
+     Worlds
+
+     `field` and `sea` are the terrain. `studio` is a cyclorama — the
+     same heightfield trick, just with a profile that sweeps up into a
+     back wall instead of noise. `void` is a polished floor and nothing
+     else, which is where the environment probe does all the work.
+     ============================================================ */
+
+  _disposeWorld() {
+    for (const key of ['cyc', 'floor', 'water']) {
+      const obj = this[key];
+      if (!obj) continue;
+      this.scene.remove(obj);
+      obj.geometry.dispose();
+      obj.material.dispose();
+      this[key] = null;
+    }
+  }
+
+  _buildStudio(state) {
+    const cw = byId(COLOURWAYS, state.colourway);
+    const SIZE = 96, SEG = 240;
+    const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+    geo.rotateX(-Math.PI / 2);
+
+    /* A radial cove rather than a back wall: flat underfoot, then a wide
+       radius sweeping up in every direction, so the seam stays invisible
+       from any camera azimuth. */
+    const pos = geo.attributes.position;
+    const flatTo = 11, riseTo = 40, wallH = 30;
+    for (let i = 0; i < pos.count; i++) {
+      const r = Math.hypot(pos.getX(i), pos.getZ(i));
+      const t = Math.min(1, Math.max(0, (r - flatTo) / (riseTo - flatTo)));
+      const eased = t * t * (3 - 2 * t);
+      pos.setY(i, eased * eased * wallH);
+    }
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: cw.text === 'dark' ? '#eceae4' : '#1c1f27',
+      roughness: 0.95, metalness: 0.0, envMapIntensity: 0.6,
+    });
+    this.cyc = new THREE.Mesh(geo, mat);
+    this.cyc.receiveShadow = true;
+    this.scene.add(this.cyc);
+  }
+
+  _buildVoidFloor(state) {
+    const cw = byId(COLOURWAYS, state.colourway);
+    const geo = new THREE.PlaneGeometry(400, 400, 1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: cw.bgBottom,
+      roughness: 0.16, metalness: 0.55,
+      envMapIntensity: 1.5,
+      clearcoat: 1, clearcoatRoughness: 0.12,
+    });
+    this.floor = new THREE.Mesh(geo, mat);
+    this.floor.position.y = -1.6;
+    this.floor.receiveShadow = true;
+    this.scene.add(this.floor);
+  }
+
+  _buildWater(state) {
+    const cw = byId(COLOURWAYS, state.colourway);
+    const geo = new THREE.PlaneGeometry(PLANE * 1.6, PLANE * 1.6, 200, 200);
+    geo.rotateX(-Math.PI / 2);
+
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: cw.low,
+      roughness: 0.06, metalness: 0.12,
+      envMapIntensity: 2.4,
+      clearcoat: 1, clearcoatRoughness: 0.04,
+      transmission: 0.18, thickness: 2.0,
+      ior: 1.33,
+    });
+
+    /* Ripples live in the vertex shader so there's no texture to ship. */
+    const u = { uTime: { value: 0 } };
+    mat.userData.u = u;
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, u);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>
+          uniform float uTime;
+          float kdWave(vec2 p){
+            return sin(p.x * 0.42 + uTime * 0.55) * cos(p.y * 0.33 - uTime * 0.4)
+                 + sin((p.x + p.y) * 0.24 + uTime * 0.8) * 0.6;
+          }`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          vec2 wp = (modelMatrix * vec4(transformed, 1.0)).xz;
+          transformed.y += kdWave(wp) * 0.06;`)
+        .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+          vec2 np = (modelMatrix * vec4(position, 1.0)).xz;
+          float e = 0.6;
+          float hx = kdWave(np + vec2(e, 0.0)) - kdWave(np - vec2(e, 0.0));
+          float hy = kdWave(np + vec2(0.0, e)) - kdWave(np - vec2(0.0, e));
+          objectNormal = normalize(vec3(-hx * 0.09, 1.0, -hy * 0.09));`);
+    };
+
+    this.water = new THREE.Mesh(geo, mat);
+    this.water.position.y = this.waterLevel || 0;
+    this.scene.add(this.water);
+  }
+
+  _buildWorld(state) {
+    const world = byId(WORLDS, state.world);
+    this._disposeWorld();
+    if (!world.terrain) this._disposeTerrain();
+
+    if (world.id === 'studio') this._buildStudio(state);
+    else if (world.id === 'void') this._buildVoidFloor(state);
+    else if (world.id === 'sea') this._buildWater(state);
+
+    /* Empty worlds want the subject on the deck, not floating in mid air. */
+    this.subjectY = world.terrain ? 2.9 : (world.id === 'studio' ? 1.9 : 1.2);
+    if (this.subject) this.subject.position.y = this.subjectY;
   }
 
   _dotTexture() {
@@ -397,19 +599,24 @@ export class Stage {
 
   _applyColourway(state) {
     const cw = byId(COLOURWAYS, state.colourway);
-    this.bgUniforms.uTop.value.set(cw.bgTop);
-    this.bgUniforms.uBottom.value.set(cw.bgBottom);
+    const sky = this._skyUniforms();
+    sky.uTop.value.set(cw.bgTop);
+    sky.uBottom.value.set(cw.bgBottom);
+    sky.uHorizon.value.set(cw.fog);
+    sky.uGround.value.set(cw.low);
     this.scene.fog.color.set(cw.fog);
-    this.rim.color.set(cw.rim);
     this.renderer.toneMappingExposure = cw.exposure;
     this.ambient.color.set(cw.text === 'dark' ? '#ffffff' : '#c7d2ff');
     this.ambient.groundColor.set(cw.low);
-    this._buildEnvironment(cw);
   }
 
   _applyLight(state) {
     const mood = byId(MOODS, state.mood);
     const cw = byId(COLOURWAYS, state.colourway);
+    /* Worlds without terrain have nothing but the environment to light them,
+       so the probe carries more of the load there. */
+    const world = byId(WORLDS, state.world);
+    this.scene.environmentIntensity = world.envIntensity;
 
     /* 'auto' hands the choice back to the colourway. */
     const keyHex = byId(LIGHT_COLOURS, state.keyColour).hex || '#ffffff';
@@ -432,15 +639,28 @@ export class Stage {
       -Math.cos(state.lightAz) * 20, 6, -Math.sin(state.lightAz) * 20,
     );
     this.rim.intensity = mood.rim * (0.5 + state.lightPower);
-    this.ambient.intensity = mood.ambient;
-    this.scene.fog.density = mood.fog;
+    this.ambient.intensity = mood.ambient * (world.terrain ? 1 : 1.5);
+    this.scene.fog.density = world.terrain ? mood.fog : mood.fog * 0.25;
+
+    /* The sky's sun is the key light, so highlights and reflections agree. */
+    const sky = this._skyUniforms();
+    sky.uSunDir.value.copy(this.key.position).normalize();
+    sky.uSunColor.value.set(keyHex);
+    sky.uSunPower.value = (0.35 + state.lightPower * 1.9)
+      * (mood.id === 'ambient' ? 0.45 : 1) * world.skyBoost;
+    sky.uFillDir.value.copy(this.rim.position).normalize();
+    sky.uFillColor.value.set(rimHex);
+    sky.uFillPower.value = mood.rim * world.skyBoost;
+    sky.uGlow.value = mood.id === 'noir' ? 0.45 : mood.id === 'contrast' ? 0.8 : 1.15;
+    sky.uPanel.value = Math.max(0, world.skyBoost - 1) * (0.4 + state.lightPower * 0.9);
   }
 
   /* ---------- camera ---------- */
 
   setCamera(id, animate = true) {
     const c = byId(CAMERAS, id);
-    const to = { az: c.az, pol: c.pol, dist: c.dist, ty: c.ty };
+    const k = this.state ? byId(WORLDS, this.state.world).camScale : 1;
+    const to = { az: c.az, pol: c.pol, dist: c.dist * k, ty: c.ty * k };
     this.targetFov = c.fov;
     if (!animate) {
       Object.assign(this.orbit, to);
@@ -464,6 +684,7 @@ export class Stage {
       if (!dragging) return;
       const dx = e.clientX - lx, dy = e.clientY - ly;
       lx = e.clientX; ly = e.clientY;
+      if (dx === 0 && dy === 0) return;
       this.orbit.az -= dx * 0.005;
       this.orbit.pol = Math.min(1.56, Math.max(0.08, this.orbit.pol - dy * 0.004));
       this.onOrbit && this.onOrbit();
@@ -477,6 +698,7 @@ export class Stage {
     el.addEventListener('pointercancel', stop);
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
+      if (!e.deltaY) return;
       this.tween = null;
       this.orbit.dist = Math.min(34, Math.max(4, this.orbit.dist * (1 + e.deltaY * 0.0011)));
       this.onOrbit && this.onOrbit();
@@ -489,13 +711,18 @@ export class Stage {
     const changed = (...keys) => !prev || keys.some((k) => state[k] !== prev[k]);
 
     if (changed('colourway')) this._applyColourway(state);
-    if (changed('scene', 'detail', 'amplitude', 'seed', 'surface', 'colourway')) this._buildTerrain(state);
-    if (changed('object', 'material', 'colourway')) this._buildSubject(state);
-    if (changed('mood', 'lightAz', 'lightEl', 'lightPower', 'keyColour', 'rimColour', 'colourway')) {
-      this._applyLight(state);
+    if (changed('world', 'scene', 'detail', 'amplitude', 'seed', 'surface', 'colourway')) {
+      if (byId(WORLDS, state.world).terrain) this._buildTerrain(state);
+      else this._disposeTerrain();
+      this._buildWorld(state);          // needs waterLevel, so terrain goes first
     }
-    if (changed('camera')) this.setCamera(state.camera, !!prev);
+    if (changed('world', 'object', 'material', 'colourway')) this._buildSubject(state);
+    if (changed('world', 'mood', 'lightAz', 'lightEl', 'lightPower', 'keyColour', 'rimColour', 'colourway')) {
+      this._applyLight(state);
+      this._updateEnvironment();   // the probe has to follow the sun
+    }
     this.state = state;
+    if (changed('camera', 'world')) this.setCamera(state.camera, !!prev);
   }
 
   resize(w, h) {
@@ -526,6 +753,8 @@ export class Stage {
       Math.sin(pol) * Math.sin(az) * dist,
     );
     this.camera.lookAt(0, ty, 0);
+
+    if (this.water) this.water.material.userData.u.uTime.value = this.elapsed;
 
     if (this.subject) {
       const t = this.elapsed;

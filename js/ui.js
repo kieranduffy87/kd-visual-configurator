@@ -23,6 +23,9 @@ export function buildPanel(host, groups, get, set) {
 
   for (const group of groups) {
     const section = el('section', 'grp');
+    if (group.visibleWhen) {
+      syncers.push((st) => { section.hidden = !group.visibleWhen(st); });
+    }
     const head = el('div', 'grp__head');
     head.append(el('h2', 'grp__title kd-label', group.title));
     if (group.hint) head.append(el('p', 'grp__hint', group.hint));

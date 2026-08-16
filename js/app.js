@@ -6,7 +6,7 @@ import { Stage } from './scene.js';
 import { drawOverlay, loadMark } from './overlay.js';
 import { buildPanel, toast } from './ui.js';
 import {
-  COLOURWAYS, SCENES, SURFACES, OBJECTS, MATERIALS, MOODS, CAMERAS,
+  COLOURWAYS, SCENES, SURFACES, OBJECTS, MATERIALS, MOODS, CAMERAS, WORLDS,
   FORMATS, LAYOUTS, SIZES, RECIPES, DEFAULT_STATE, LIGHT_COLOURS, QUALITY,
   byId, encodeState, decodeState, shuffle,
 } from './brand.js';
@@ -42,9 +42,17 @@ stage.setCamera(state.camera, false);
 const pct = (v) => Math.round(v * 100) + '%';
 const deg = (v) => Math.round((v * 180) / Math.PI) + '°';
 
+const hasTerrain = (s) => byId(WORLDS, s.world).terrain;
+
 const leftGroups = [
   {
+    title: 'World',
+    hint: 'The kind of space the visual sits in.',
+    controls: [{ type: 'chips', key: 'world', options: WORLDS }],
+  },
+  {
     title: 'Landscape',
+    visibleWhen: hasTerrain,
     hint: 'The base terrain. Seed keeps a look reproducible.',
     controls: [
       { type: 'chips', key: 'scene', options: SCENES },
@@ -55,6 +63,7 @@ const leftGroups = [
   },
   {
     title: 'Surface',
+    visibleWhen: hasTerrain,
     hint: 'How the field is drawn.',
     controls: [{ type: 'chips', key: 'surface', options: SURFACES }],
   },
@@ -384,7 +393,16 @@ document.getElementById('btn-copy-link').addEventListener('click', async () => {
 
 document.getElementById('btn-shuffle').addEventListener('click', () => set(shuffle(state)));
 
-document.getElementById('btn-reset').addEventListener('click', () => set({ ...DEFAULT_STATE }));
+document.getElementById('btn-reset').addEventListener('click', () => {
+  set({ ...DEFAULT_STATE });
+  /* The camera id may already match, so nothing would re-apply the preset —
+     force it, otherwise a nudged angle survives the reset. */
+  stage.setCamera(DEFAULT_STATE.camera, true);
+  const note = document.getElementById('cam-note');
+  note.textContent = '';
+  note.classList.remove('is-on');
+  invalidate();
+});
 
 const guideBtn = document.getElementById('btn-guides');
 guideBtn.addEventListener('click', () => {

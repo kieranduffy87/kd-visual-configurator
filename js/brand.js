@@ -108,6 +108,15 @@ export const COLOURWAYS = [
   },
 ];
 
+/* The kind of space the visual sits in. Landscape controls only apply to
+   the two worlds that actually have terrain. */
+export const WORLDS = [
+  { id: 'field', name: 'Field', terrain: true, camScale: 1, envIntensity: 1.0, skyBoost: 1.0, note: 'Open landscape running to the horizon' },
+  { id: 'sea', name: 'Sea', terrain: true, camScale: 1, envIntensity: 1.15, skyBoost: 1.0, note: 'The same land, half drowned' },
+  { id: 'studio', name: 'Studio', terrain: false, camScale: 0.62, envIntensity: 1.35, skyBoost: 1.7, note: 'Seamless cyclorama, product-shot lighting' },
+  { id: 'void', name: 'Void', terrain: false, camScale: 0.66, envIntensity: 1.9, skyBoost: 2.4, note: 'Floating on a polished floor' },
+];
+
 export const SCENES = [
   { id: 'dunes', name: 'Dunes' },
   { id: 'ridges', name: 'Ridges' },
@@ -203,6 +212,7 @@ export const SIZES = [
 ];
 
 export const DEFAULT_STATE = {
+  world: 'field',
   scene: 'dunes',
   detail: 0.7,
   amplitude: 0.78,
@@ -237,6 +247,7 @@ export const RECIPES = [
     id: 'hero',
     name: 'Brand hero',
     state: {
+      world: 'field',
       scene: 'dunes', surface: 'contour', object: 'mark', material: 'glass',
       colourway: 'electric', mood: 'contrast', camera: 'hero', format: '16:9',
       layout: 'stack', amplitude: 0.78, detail: 0.7, seed: 5487,
@@ -248,6 +259,7 @@ export const RECIPES = [
     id: 'cover',
     name: 'Report cover',
     state: {
+      world: 'field',
       scene: 'mesa', surface: 'grid', object: 'monolith', material: 'brand',
       colourway: 'paper', mood: 'ambient', camera: 'aerial', format: '3:2',
       layout: 'cover', amplitude: 0.42, detail: 0.7, seed: 1177,
@@ -259,6 +271,7 @@ export const RECIPES = [
     id: 'social',
     name: 'Social square',
     state: {
+      world: 'field',
       scene: 'ridges', surface: 'solid', object: 'sphere', material: 'metal',
       colourway: 'signal', mood: 'contrast', camera: 'detail', format: '1:1',
       layout: 'centre', amplitude: 0.66, detail: 0.6, seed: 9042,
@@ -270,6 +283,7 @@ export const RECIPES = [
     id: 'story',
     name: 'Story',
     state: {
+      world: 'field',
       scene: 'swell', surface: 'points', object: 'torus', material: 'brand',
       colourway: 'ink', mood: 'noir', camera: 'low', format: '9:16',
       layout: 'corner', amplitude: 0.55, detail: 0.75, seed: 3310,
@@ -281,6 +295,7 @@ export const RECIPES = [
     id: 'divider',
     name: 'Deck divider',
     state: {
+      world: 'field',
       scene: 'terraces', surface: 'contour', object: 'none', material: 'matte',
       colourway: 'ink', mood: 'studio', camera: 'horizon', format: '16:9',
       layout: 'split', amplitude: 0.38, detail: 0.5, seed: 6612,
@@ -292,6 +307,7 @@ export const RECIPES = [
     id: 'pattern',
     name: 'Pattern plate',
     state: {
+      world: 'field',
       scene: 'swell', surface: 'grid', object: 'none', material: 'matte',
       colourway: 'electric', mood: 'ambient', camera: 'plan', format: '4:5',
       layout: 'none', amplitude: 0.72, detail: 0.85, seed: 2048,
@@ -303,6 +319,7 @@ export const RECIPES = [
     id: 'ridge',
     name: 'Canyon hero',
     state: {
+      world: 'field',
       scene: 'canyons', surface: 'solid', object: 'none', material: 'matte',
       colourway: 'blueprint', mood: 'contrast', camera: 'hero', format: '16:9',
       layout: 'cover', amplitude: 0.82, detail: 0.8, seed: 7314,
@@ -314,6 +331,7 @@ export const RECIPES = [
     id: 'isles',
     name: 'Archipelago',
     state: {
+      world: 'sea',
       scene: 'archipelago', surface: 'contour', object: 'sphere', material: 'glass',
       colourway: 'arctic', mood: 'ambient', camera: 'aerial', format: '4:5',
       layout: 'centre', amplitude: 0.6, detail: 0.85, seed: 2266,
@@ -322,9 +340,34 @@ export const RECIPES = [
     },
   },
   {
+    id: 'plinth',
+    name: 'Studio still',
+    state: {
+      world: 'studio',
+      scene: 'dunes', surface: 'solid', object: 'mark', material: 'brand',
+      colourway: 'paper', mood: 'studio', camera: 'detail', format: '1:1',
+      layout: 'corner', amplitude: 0.5, detail: 0.6, seed: 4821,
+      lightAz: 1.1, lightEl: 0.62, lightPower: 0.7, scrim: false,
+      keyColour: 'neutral', rimColour: 'ice', focus: 0.28,
+    },
+  },
+  {
+    id: 'suspend',
+    name: 'Void object',
+    state: {
+      world: 'void',
+      scene: 'dunes', surface: 'solid', object: 'torus', material: 'glass',
+      colourway: 'ink', mood: 'contrast', camera: 'hero', format: '4:5',
+      layout: 'centre', amplitude: 0.5, detail: 0.6, seed: 4821,
+      lightAz: -1.9, lightEl: 0.4, lightPower: 0.8, scrim: false,
+      keyColour: 'ice', rimColour: 'electric', focus: 0.4,
+    },
+  },
+  {
     id: 'facet',
     name: 'Crystal field',
     state: {
+      world: 'field',
       scene: 'crystal', surface: 'solid', object: 'mark', material: 'metal',
       colourway: 'nocturne', mood: 'noir', camera: 'detail', format: '1:1',
       layout: 'corner', amplitude: 0.7, detail: 0.6, seed: 8140,
@@ -364,12 +407,15 @@ const jitter = (lo, hi) => lo + Math.random() * (hi - lo);
 
 export function shuffle(state) {
   const object = pick(OBJECTS);
+  const world = pick(WORLDS);
   return {
     ...state,
+    world,
+    /* the empty worlds need something in them */
+    object: world === 'field' || world === 'sea' ? object : pick(OBJECTS.filter((o) => o.id !== 'none')),
     scene: pick(SCENES),
     surface: pick(SURFACES),
-    object,
-    material: object === 'none' ? state.material : pick(MATERIALS),
+    material: pick(MATERIALS),
     colourway: pick(COLOURWAYS),
     mood: pick(MOODS),
     keyColour: pick(LIGHT_COLOURS),
